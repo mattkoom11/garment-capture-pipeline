@@ -31,9 +31,13 @@ bake_texture.py             <- this repo, via Blender, run every scan needing co
    ↓
 assemble_textured_glb.py    <- this repo, run every scan needing color
    ↓
-Blender preprocessing (crop/align/decimate)
+Blender preprocessing (crop/align)
    ↓
-trimesh feature extraction
+decimate_mesh.py            <- this repo, normalizes mesh density before extraction
+   ↓
+extract_features.py         <- this repo, upserts one row per garment into features.csv
+   ↓
+pca_sanity_check.py         <- this repo, PCA smoke test once a few rows exist
 ```
 
 ## Scripts
@@ -131,3 +135,80 @@ scan that "looks wrong":**
 - A GLB primitive with no material at all should fall back to a white
   default per the GLTF spec, but rendered solid black in this project's
   actual viewer — always set an explicit `baseColorFactor`.
+
+### `decimate_mesh.py`
+
+Run after retopology (and before feature extraction) on a copy of the mesh
+dedicated to extraction -- keep it separate from whatever copy feeds
+`bake_texture.py`/the frontend, since decimating after UV-unwrap + baking
+would invalidate the baked texture's UV layout:
+
+```bash
+blender --background --python decimate_mesh.py -- \
+  --input-obj retopologized.obj \
+  --output-obj retopologized_decimated.obj \
+  --target-vertices 15000
+```
+
+**Why this exists:** `extract_features.py`'s `surface_area` and curvature
+columns are density-sensitive -- a denser mesh reads as having more
+surface detail purely from having more, smaller triangles, independent of
+actual garment shape. AutoRemesher's output vertex count isn't currently
+controlled and varied 21,872–30,303 across the three test garments before
+this script existed. Uses Blender's Decimate modifier (Collapse type),
+computing a ratio from the mesh's current vertex count to hit the target
+(Blender's decimate takes a ratio, not a target count directly, so this
+doesn't land on the target exactly -- it prints a warning if the result is
+off by more than 15%). Default target (15,000) is below every garment's
+vertex count seen so far, since a mesh can only be decimated down, not up.
+
+**Real gotcha hit building this:** the first version exported OBJ with
+default settings and the *reloaded* vertex count came back wildly
+inflated (~70,000, not the ~15,000 Blender's own mesh data actually had)
+-- Blender's OBJ exporter writes a separate vertex line per unique
+(position, normal) combination referenced by a face, and the Decimate
+modifier leaves flat/hard-shaded normals at collapsed edges, so nearly
+every face corner ended up with its own duplicate-position vertex on
+export. Fixed with `export_normals=False` -- normals aren't meaningful
+for geometric feature extraction anyway, and this makes the exported
+vertex count match Blender's internal count exactly.
+
+### `extract_features.py`
+
+Run after preprocessing, once a clean, density-normalized mesh (`decimate_mesh.py`'s
+output, OBJ or GLB) is ready:
+
+```bash
+python extract_features.py --mesh testdress0.glb --garment-id testdress0 \
+    --label "Test Dress 0" --out features.csv
+```
+
+Upserts one row per `--garment-id` into `features.csv` (re-running the same
+ID replaces that row rather than duplicating it). Computes bounding box,
+surface area, volume, and mean/std curvature; auto-corrects for a real
+per-scan Z-up vs Y-up inconsistency confirmed across garments in this
+project. `volume` is currently NaN for every garment — AutoRemesher's quad
+retopology leaves a handful of non-manifold edges even after `weld_source.py`
+closes all boundary edges, which fails `trimesh.is_watertight`'s stricter
+check; `symmetry_score`/`drape_extent` are undefined placeholders pending a
+methodology decision. See the project vault
+(`concepts/garment-capture/garment-feature-extraction.md`) for the full
+gotcha writeup.
+
+### `pca_sanity_check.py`
+
+Run once `features.csv` has a few rows, as a pipeline smoke test (not a
+real statistical result until the 5-garment pilot target is reached):
+
+```bash
+python pca_sanity_check.py --features features.csv --out pca_sanity_check.png
+```
+
+Z-score standardizes the well-defined, non-NaN columns (`bbox_x/y/z`,
+`surface_area`, `mean_curvature`, `std_curvature`) and runs PCA, printing
+explained variance and component loadings and saving a labeled scatter
+plot. Deliberately excludes `volume`/`symmetry_score`/`drape_extent`
+(all-NaN so far — dropped rather than imputed, to avoid fabricating signal)
+and `num_vertices`/`num_faces` (density isn't normalized across garments
+yet, so these currently measure retopology resolution more than shape).
+Requires `pandas`, `scikit-learn`, and `matplotlib` (in `requirements.txt`).

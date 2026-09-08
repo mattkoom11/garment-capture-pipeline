@@ -17,19 +17,39 @@ Four features are well-defined and computed here:
     scaled to the mesh's own size (a fixed absolute radius would compare
     unfairly across garments of different physical scale)
 
-Two columns are intentionally left as NaN placeholders: symmetry_score and
-drape_extent. These aren't off-the-shelf trimesh calls -- they're
-project-specific metrics that need an actual methodology decision (e.g.
-"symmetry" could mean deviation from a reflected copy across the centroid
-plane; "drape" could mean variance in the lower portion's radial extent).
-Don't guess at these silently; decide the definition first, then implement.
+Two more columns, symmetry_score and drape_extent, are now implemented
+(methodology decided 2026-09-08 -- previously NaN placeholders since they
+aren't off-the-shelf trimesh calls):
 
-Known limitation, not yet addressed: garments in this pipeline aren't
-currently decimated to an identical target vertex count before extraction,
-so density-sensitive features (surface_area, curvature) aren't perfectly
-apples-to-apples across garments yet. Fine for proving the extraction code
-works; worth fixing (per the project's own documented preprocessing step)
-before treating cross-garment comparisons as rigorous.
+  - symmetry_score: deviation from a mirrored copy of the mesh reflected
+    across its own centroid plane. The mesh's left-right axis isn't known
+    a priori (per-scan rotation around the vertical axis isn't
+    calibrated -- see normalize_up_axis for the related up-axis issue), so
+    this tries both horizontal axes as the candidate mirror plane and
+    reports the lower (more-symmetric) of the two: a garment is expected
+    to be bilaterally symmetric across exactly one horizontal plane and
+    NOT symmetric front-to-back, so the minimum finds the true left-right
+    plane without needing to know which axis it is. Reported as a
+    scale-invariant symmetric Chamfer distance to the mirrored copy,
+    divided by the mesh's own bounding diagonal -- 0 is perfectly
+    symmetric, larger is more asymmetric (despite the "_score" name, this
+    is an asymmetry distance, not a 0-1 goodness score).
+  - drape_extent: coefficient of variation (std/mean) of radial distance
+    from the mesh's own central vertical axis, computed only over the
+    lower 25% of the mesh's height (the hem/skirt region -- not the whole
+    garment, since bodice/shoulder geometry isn't what "drape" means
+    here). std/mean rather than raw variance, so it's comparable across
+    garments of different physical size -- the same normalization
+    rationale as mean_curvature's bounding-diagonal-scaled radius above.
+
+Density normalization (2026-09-08): garments should be decimated to a
+consistent target vertex count before extraction, so density-sensitive
+features (surface_area, curvature) are apples-to-apples across garments --
+now available as decimate_mesh.py (a separate Blender-headless script;
+this script doesn't invoke it automatically, so it's still possible to
+accidentally run extraction against a non-decimated mesh). All 3 current
+`features.csv` rows were re-extracted from decimate_mesh.py's output
+(~15,000 vertices each) as of this date.
 
 Known, deliberately deferred (2026-09-08, not a bug): `volume` is NaN for
 every garment run through this so far. AutoRemesher's own quad retopology
@@ -56,6 +76,7 @@ import os
 
 import numpy as np
 import trimesh
+from scipy.spatial import cKDTree
 
 COLUMNS = [
     "garment_id", "label", "num_vertices", "num_faces",
@@ -93,6 +114,47 @@ def normalize_up_axis(mesh, garment_id):
     return mesh
 
 
+def compute_symmetry_score(mesh):
+    """Symmetric Chamfer distance to the mesh's own best-fit mirror image,
+    normalized by bounding diagonal (0 = perfectly symmetric). Tries both
+    horizontal axes as the mirror plane (mesh assumed Y-up already) and
+    keeps the lower distance -- see module docstring for why."""
+    verts = mesh.vertices
+    centered = verts - verts.mean(axis=0)
+    diag = float(np.linalg.norm(mesh.extents))
+
+    best = None
+    for axis in (0, 2):  # X and Z -- axis 1 (Y) is up, not a mirror candidate
+        mirrored = centered.copy()
+        mirrored[:, axis] *= -1
+        d_to_mirrored, _ = cKDTree(mirrored).query(centered)
+        d_to_centered, _ = cKDTree(centered).query(mirrored)
+        chamfer = float((np.mean(d_to_mirrored) + np.mean(d_to_centered)) / 2.0)
+        asymmetry = chamfer / diag
+        if best is None or asymmetry < best:
+            best = asymmetry
+    return best
+
+
+def compute_drape_extent(mesh, lower_fraction=0.25):
+    """Coefficient of variation (std/mean) of radial distance from the
+    mesh's central vertical axis, over the lower `lower_fraction` of the
+    mesh's height only (the hem/skirt region) -- see module docstring."""
+    verts = mesh.vertices
+    y = verts[:, 1]
+    threshold = y.min() + lower_fraction * mesh.extents[1]
+    lower_verts = verts[y <= threshold]
+    if len(lower_verts) < 10:
+        print(f"  WARNING: only {len(lower_verts)} vertices in the lower {lower_fraction:.0%} of the mesh -- drape_extent may be noisy")
+
+    centroid_xz = lower_verts[:, [0, 2]].mean(axis=0)
+    radial = np.linalg.norm(lower_verts[:, [0, 2]] - centroid_xz, axis=1)
+    mean_r = radial.mean()
+    if mean_r == 0:
+        return float("nan")
+    return float(radial.std() / mean_r)
+
+
 def compute_features(mesh, garment_id, label):
     mesh = normalize_up_axis(mesh, garment_id)
     bbox = mesh.extents  # [x, y, z] extents, now Y-up-consistent
@@ -126,8 +188,8 @@ def compute_features(mesh, garment_id, label):
         "is_watertight": watertight,
         "mean_curvature": mean_curv,
         "std_curvature": std_curv,
-        "symmetry_score": float("nan"),  # not yet defined -- see module docstring
-        "drape_extent": float("nan"),    # not yet defined -- see module docstring
+        "symmetry_score": compute_symmetry_score(mesh),
+        "drape_extent": compute_drape_extent(mesh),
     }
 
 
