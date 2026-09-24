@@ -197,6 +197,17 @@ things worth knowing from doing that for testdress0-3:
   and that pairs correctly with the dense mesh's UVs (verified by render),
   so don't assume a missing `map_Kd` means the UVs are unusable.
 
+**Color: `--srgb-encode` (2026-09-23, tested on `testdress4` only).**
+RealityScan's diffuse comes out dark, orange and oversaturated next to the
+photos (testdress4 median RGB 146,87,25 vs. the Blender-baked atlas's
+190,150,82; the sRGB curve applied to the former gives ~196,155,88). It
+looks like linear values being read as sRGB. `--srgb-encode` applies the
+linear->sRGB curve after the downscale. It is a workaround: if a RealityScan
+export/color-profile setting is found that writes the texture correctly,
+use that and drop the flag, or the correction applies twice. Not yet
+verified on `testdress0`-`3`; measure each one before rebuilding. The
+pre-fix `testdress4` GLB is `textured/testdress4_orange_old.glb`.
+
 The old retopologized-and-baked GLBs are kept as
 `textured/testdressN_baked_old.glb` (gitignored) and in the frontend's git
 history.

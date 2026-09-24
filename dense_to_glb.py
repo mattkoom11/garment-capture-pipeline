@@ -28,6 +28,12 @@ Image.MAX_IMAGE_PIXELS = None
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+def srgb_encode(img):
+    c = np.asarray(img, dtype=np.float32) / 255.0
+    c = np.where(c <= 0.0031308, 12.92 * c, 1.055 * np.power(c, 1 / 2.4) - 0.055)
+    return Image.fromarray((np.clip(c, 0, 1) * 255 + 0.5).astype(np.uint8))
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--obj", required=True)
@@ -38,6 +44,9 @@ def main():
     p.add_argument("--jpeg-quality", type=int, default=88)
     p.add_argument("--rotate-x", type=float, default=None)
     p.add_argument("--reference-glb", default=None)
+    p.add_argument("--srgb-encode", action="store_true",
+                   help="apply the linear->sRGB curve to the diffuse (RealityScan's texture comes out "
+                        "dark/orange/oversaturated when it holds linear values that get read as sRGB)")
     a = p.parse_args()
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -68,7 +77,10 @@ def main():
         m.apply_transform(T)
 
         jpg = os.path.join(tmp, "tex.jpg")
-        Image.open(a.texture).convert("RGB").resize((a.texture_size,) * 2, Image.LANCZOS).save(jpg, quality=a.jpeg_quality)
+        tex = Image.open(a.texture).convert("RGB").resize((a.texture_size,) * 2, Image.LANCZOS)
+        if a.srgb_encode:
+            tex = srgb_encode(tex)
+        tex.save(jpg, quality=a.jpeg_quality)
         m.visual = trimesh.visual.TextureVisuals(uv=m.visual.uv, material=trimesh.visual.material.PBRMaterial(
             baseColorFactor=[255, 255, 255, 255], baseColorTexture=Image.open(jpg),
             metallicFactor=0.0, roughnessFactor=0.9, doubleSided=True))
