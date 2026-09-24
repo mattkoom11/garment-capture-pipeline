@@ -199,14 +199,30 @@ things worth knowing from doing that for testdress0-3:
 
 **Color: `--srgb-encode` (2026-09-23, tested on `testdress4` only).**
 RealityScan's diffuse comes out dark, orange and oversaturated next to the
-photos (testdress4 median RGB 146,87,25 vs. the Blender-baked atlas's
-190,150,82; the sRGB curve applied to the former gives ~196,155,88). It
+photos (testdress3: diffuse median RGB 146,87,25 vs. its Blender-baked atlas's
+190,150,82; the sRGB curve applied to the former gives ~199,158,88). Same
+shift measured on all five dresses. It
 looks like linear values being read as sRGB. `--srgb-encode` applies the
 linear->sRGB curve after the downscale. It is a workaround: if a RealityScan
 export/color-profile setting is found that writes the texture correctly,
-use that and drop the flag, or the correction applies twice. Not yet
-verified on `testdress0`-`3`; measure each one before rebuilding. The
-pre-fix `testdress4` GLB is `textured/testdress4_orange_old.glb`.
+use that and drop the flag, or the correction applies twice. All five
+dresses are fixed. `testdress4` was rebuilt with the flag; `testdress0`-`3`
+were re-textured in place with `srgb_fix_glb.py` (below), because a rebuild
+would have lost testdress1's vertical offset. Pre-fix GLBs are kept, gitignored,
+as `textured/testdress4_orange_old.glb` and
+`textured/testdressN_raw_old.glb` (`testdress0-repaired_raw_old.glb` for 0).
+
+`srgb_fix_glb.py` swaps an sRGB-encoded 4K JPEG (downscaled from the original
+diffuse, then encoded) into an existing GLB and leaves vertices, faces, UVs and
+bounds untouched (verified identical):
+
+```bash
+python srgb_fix_glb.py --glb testdress1.glb \
+  --texture TestDress1_u1_v1_diffuse.png --out-glb testdress1_fixed.glb
+```
+
+Don't run it on a GLB that was already built with `--srgb-encode`, or the
+correction applies twice.
 
 The old retopologized-and-baked GLBs are kept as
 `textured/testdressN_baked_old.glb` (gitignored) and in the frontend's git
