@@ -13,9 +13,11 @@ three garments.
 Eight columns are used: bbox_x/y/z, surface_area, mean_curvature,
 std_curvature, symmetry_score, and drape_extent (the latter two implemented
 2026-09-08 -- see extract_features.py's docstring for their definitions).
-`volume` is still all-NaN for every row (AutoRemesher's non-manifold quad
-poles, deliberately deferred) and is dropped rather than imputed --
-imputing a placeholder value would silently fabricate signal in a PCA.
+`volume` is added as a ninth column only when it has no NaNs (it was all-NaN
+for every row while features came from AutoRemesher's non-manifold retopology;
+meshes decimated from the dense scan are watertight so it is defined). If any
+row is NaN it is dropped rather than imputed -- imputing a placeholder value
+would silently fabricate signal in a PCA.
 num_vertices/num_faces are also excluded, for a different reason as of
 2026-09-08: now that every mesh is decimated to ~15,000 vertices before
 extraction (decimate_mesh.py), these columns are nearly constant across
@@ -48,13 +50,17 @@ def main():
     df = pd.read_csv(args.features)
     print(f"loaded {len(df)} rows from {args.features}")
 
-    dropped = [c for c in df.columns if c not in FEATURE_COLUMNS and c not in ("garment_id", "label")]
-    if dropped:
-        print(f"  dropping (NaN or density-confounded, not yet usable): {dropped}")
+    feature_columns = list(FEATURE_COLUMNS)
+    if "volume" in df.columns and not df["volume"].isna().any():
+        feature_columns.append("volume")
 
-    X = df[FEATURE_COLUMNS].to_numpy()
+    dropped = [c for c in df.columns if c not in feature_columns and c not in ("garment_id", "label")]
+    if dropped:
+        print(f"  dropping (NaN or uninformative, not used): {dropped}")
+
+    X = df[feature_columns].to_numpy()
     if np.isnan(X).any():
-        raise ValueError(f"unexpected NaN in {FEATURE_COLUMNS} -- these should all be well-defined columns")
+        raise ValueError(f"unexpected NaN in {feature_columns} -- these should all be well-defined columns")
 
     X_scaled = StandardScaler().fit_transform(X)
 
@@ -66,10 +72,9 @@ def main():
     print(f"cumulative: {np.cumsum(pca.explained_variance_ratio_)}")
     print(f"\nNOTE: n={len(df)} garments -- PCA rank-capped at {len(df) - 1} components.")
     print("This is a pipeline smoke test, not a statistically meaningful result.")
-    print("Revisit once the 5-garment Pilot Plan phase-2 target is reached.")
 
     print("\ncomponent loadings (how much each feature contributes to each PC):")
-    loadings = pd.DataFrame(pca.components_.T, index=FEATURE_COLUMNS,
+    loadings = pd.DataFrame(pca.components_.T, index=feature_columns,
                              columns=[f"PC{i+1}" for i in range(n_components)])
     print(loadings.round(3).to_string())
 

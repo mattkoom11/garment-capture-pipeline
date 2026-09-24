@@ -20,25 +20,29 @@ LTS) as a system install — it's a Blender script run via `blender
 
 ## Pipeline order
 
+Current flow (since 2026-09-23). Both branches start from the dense RealityScan
+OBJ + its texture; AutoRemesher retopology is no longer used by either.
+
 ```
-RealityScan export (OBJ)
-   ↓
-weld_source.py             <- this repo, run every scan
-   ↓
-AutoRemesher retopology
-   ↓
-bake_texture.py             <- this repo, via Blender, run every scan needing color
-   ↓
-assemble_textured_glb.py    <- this repo, run every scan needing color
-   ↓
-Blender preprocessing (crop/align)
-   ↓
-decimate_mesh.py            <- this repo, normalizes mesh density before extraction
-   ↓
-extract_features.py         <- this repo, upserts one row per garment into features.csv
-   ↓
-pca_sanity_check.py         <- this repo, PCA smoke test once a few rows exist
+RealityScan export (dense OBJ + diffuse texture)
+   |
+   +-- display:     dense_to_glb.py  ->  GLB for the frontend
+   |
+   +-- statistics:  weld_source.py      <- only if the scan is fragmented
+                       ↓                   (dense_features.py refuses those)
+                    dense_features.py   <- decimate -> merge -> connectivity
+                       ↓                   check -> 15k vertices ->
+                       ↓                   extract_features.py
+                    features.csv
+                       ↓
+                    pca_sanity_check.py <- PCA smoke test
 ```
+
+Retired for the display and statistics paths (kept as history and in case
+they're needed again): AutoRemesher retopology, `bake_texture.py`,
+`assemble_textured_glb.py`, and `decimate_mesh.py` as a standalone step
+(`dense_features.py` still calls it internally). Previous retopology-based
+results are in `features_retopo_v1.csv`.
 
 ## Scripts
 
@@ -248,13 +252,42 @@ Upserts one row per `--garment-id` into `features.csv` (re-running the same
 ID replaces that row rather than duplicating it). Computes bounding box,
 surface area, volume, and mean/std curvature; auto-corrects for a real
 per-scan Z-up vs Y-up inconsistency confirmed across garments in this
-project. `volume` is currently NaN for every garment — AutoRemesher's quad
-retopology leaves a handful of non-manifold edges even after `weld_source.py`
-closes all boundary edges, which fails `trimesh.is_watertight`'s stricter
-check; `symmetry_score`/`drape_extent` are undefined placeholders pending a
-methodology decision. See the project vault
+project. `symmetry_score` and `drape_extent` are implemented (see the
+docstring). `volume` was NaN for every garment while features came from the
+AutoRemesher mesh — its quad retopology leaves non-manifold edges that fail
+`trimesh.is_watertight` — but is defined for meshes decimated from the dense
+scan (see `dense_features.py` below). See the project vault
 (`concepts/garment-capture/garment-feature-extraction.md`) for the full
 gotcha writeup.
+
+### `dense_features.py`
+
+**How `features.csv` is now built (since 2026-09-23).** Builds a row straight
+from a dense RealityScan scan, skipping AutoRemesher:
+
+```bash
+python dense_features.py --obj TestDress4.obj --garment-id testdress4 \
+    --label "Test Dress 4" --out features.csv
+```
+
+Decimates the dense scan (5M -> 100k faces), merges vertices by position, checks
+connectivity, decimates to `--target-vertices` (default 15,000), and runs
+`extract_features`. Why: the retopologized mesh's smoothing biased the features
+(`surface_area` ~10% low, curvature 0.6-1.7x off, `volume` undefined); see
+`experiments/dense_vs_retopo/`. The **connectivity check refuses a fragmented
+or open mesh** (raw `TestDress0.obj` decimates to 1,548 pieces — RealityScan's
+fold-collapse defect), telling you to run `weld_source.py` first and pass the
+welded OBJ, as was done for `testdress0`.
+
+Density is held fixed deliberately: mean curvature drifts *systematically* with
+mesh density (differently per garment: `testdress3` 0.81 -> 0.94 from 13k to 50k
+vertices, `testdress1` 0.25 -> 0.22), but within 13k-17k vertices it varies
+only ~4% per garment vs a between-garment spread ~20x larger (signal-to-noise
+22-113 for every feature; `volume` is essentially exact). The 13k-17k band was
+more stable than 25k-50k on symmetry and drape, so 15k stays the target.
+
+`features_retopo_v1.csv` / `pca_sanity_check_retopo_v1.png` preserve the
+previous retopology-based results.
 
 ### `pca_sanity_check.py`
 
@@ -265,11 +298,11 @@ real statistical result until the 5-garment pilot target is reached):
 python pca_sanity_check.py --features features.csv --out pca_sanity_check.png
 ```
 
-Z-score standardizes the well-defined, non-NaN columns (`bbox_x/y/z`,
-`surface_area`, `mean_curvature`, `std_curvature`) and runs PCA, printing
-explained variance and component loadings and saving a labeled scatter
-plot. Deliberately excludes `volume`/`symmetry_score`/`drape_extent`
-(all-NaN so far — dropped rather than imputed, to avoid fabricating signal)
-and `num_vertices`/`num_faces` (density isn't normalized across garments
-yet, so these currently measure retopology resolution more than shape).
+Z-score standardizes eight columns (`bbox_x/y/z`, `surface_area`,
+`mean_curvature`, `std_curvature`, `symmetry_score`, `drape_extent`), plus
+`volume` when it has no NaNs, and runs PCA, printing explained variance and
+component loadings and saving a labeled scatter plot. Any column with NaNs is
+dropped rather than imputed, to avoid fabricating signal. `num_vertices` /
+`num_faces` are excluded because every mesh is decimated to ~15k vertices, so
+they're near-constant by construction and carry no shape signal.
 Requires `pandas`, `scikit-learn`, and `matplotlib` (in `requirements.txt`).
