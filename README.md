@@ -97,13 +97,20 @@ blender --background --python bake_texture.py -- \
   --diffuse-png raw_scan_textures/diffuse.png \
   --target-obj retopologized.obj \
   --out-obj retopologized_uv.obj \
-  --out-texture baked_diffuse.png
+  --out-texture baked_diffuse.png \
+  --angle-limit 66.0 \
+  --island-margin 0.02
 
 python assemble_textured_glb.py \
   --mesh-obj retopologized_uv.obj \
   --texture-png baked_diffuse.png \
   --out-glb final.glb
 ```
+
+`--angle-limit`/`--island-margin` control Blender's Smart UV Project call
+directly (defaults shown above, Blender's own defaults) — see the
+texture-stretch gotcha below before reaching for these on a future scan
+that looks stretched; they're less likely to help than they sound.
 
 **Why two steps, and why this exists at all:** AutoRemesher's retopology
 produces entirely new geometry with no UV coordinates, so there's no way to
@@ -135,6 +142,60 @@ scan that "looks wrong":**
 - A GLB primitive with no material at all should fall back to a white
   default per the GLTF spec, but rendered solid black in this project's
   actual viewer — always set an explicit `baseColorFactor`.
+- **Smeared texture + black blocks on `testdress4` (2026-09-23): the
+  retopologize-and-rebake route itself was the problem, not any tunable.**
+  The dense RealityScan mesh + its own texture rendered clean in Blender;
+  the baked result did not, with streaks and solid black squares
+  concentrated along the center-front placket (thin overlapping fabric
+  layers, ribbon ties and ruffles that the smooth ~23k-vertex AutoRemesher
+  shell doesn't represent, so bake rays land on the wrong layer or miss).
+  Verified by rendering both in headless Blender and comparing. All of
+  these produced *pixel-identical artifacts in the same places*, so none of
+  them is the lever: Smart UV Project `angle_limit` 30/66/89, bake
+  `cage_extrusion`/`max_ray_distance` up to 1.0/4.0 (all now CLI flags), and
+  a switch to LSCM unwrap with auto-seams (far worse, near-zero UV area on
+  99.9% of faces). The baked atlas was also visibly paler than the source
+  texture, so a colorspace shift (the OCIO fallback) sits on top of this.
+  **Fix, now applied to all five test dresses (2026-09-23):** skip
+  retopology/baking for the *display* asset and decimate the dense textured
+  mesh directly, keeping RealityScan's own UVs and texture. Each GLB is
+  3.9-5.3MB (4K JPEG texture, 100k faces), verified by front/back renders
+  with no smearing or black blocks and the correct color. Retopology is
+  still what feeds `decimate_mesh.py` / `extract_features.py`; only the
+  display GLB changed. See `dense_to_glb.py` below.
+
+### `dense_to_glb.py` + `decimate_dense_textured.py`
+
+The current way to build a display GLB (replaces `bake_texture.py` +
+`assemble_textured_glb.py` for this purpose):
+
+```bash
+python dense_to_glb.py \
+  --obj raw_scan.obj \
+  --texture raw_scan_u1_v1_diffuse.png \
+  --out-glb final.glb \
+  --rotate-x -90          # 0 for a Y-up export, -90 for a Z-up one
+```
+
+Wraps the Blender Collapse decimate (5.0M -> 100k faces, ~75s) and the
+trimesh GLB assembly. Instead of `--rotate-x` you can pass
+`--reference-glb existing.glb` to auto-pick the axis-aligned rotation that
+best matches an existing GLB's bounds, and it prints the residual. Handy
+when re-doing a garment so a tuned `model3d_rotationY` stays valid. Two
+things worth knowing from doing that for testdress0-3:
+- `testdress1`'s old GLB also had a +7.81 vertical offset (recovered
+  exactly by Procrustes-aligning its old UV mesh against the live GLB), so
+  the reference check reported a large residual there even though the
+  rotation was right. A large residual means "look for an offset", not
+  "wrong rotation".
+- `testdress0`'s dense OBJ has no texture in its `.mtl`; its only texture is
+  the `..._LowPoly_u0_v0_diffuse.png` from RealityScan's low-poly export,
+  and that pairs correctly with the dense mesh's UVs (verified by render),
+  so don't assume a missing `map_Kd` means the UVs are unusable.
+
+The old retopologized-and-baked GLBs are kept as
+`textured/testdressN_baked_old.glb` (gitignored) and in the frontend's git
+history.
 
 ### `decimate_mesh.py`
 

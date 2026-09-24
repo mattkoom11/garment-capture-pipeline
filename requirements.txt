@@ -1,6 +1,7 @@
 numpy
 scipy
 trimesh
+rtree
 pillow
 pandas
 scikit-learn

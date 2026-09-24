@@ -54,6 +54,10 @@ def parse_args():
     parser.add_argument("--out-obj", required=True, help="Path to write the UV-unwrapped target mesh to")
     parser.add_argument("--out-texture", required=True, help="Path to write the baked diffuse PNG to")
     parser.add_argument("--resolution", type=int, default=2048, help="Bake texture size in pixels, square (default: 2048)")
+    parser.add_argument("--angle-limit", type=float, default=66.0, help="Smart UV Project angle_limit in degrees (default: 66.0, Blender's own default). Lower values create more, smaller UV islands -- reduces max texture stretch on doubly-curved surfaces at the cost of more visible seams.")
+    parser.add_argument("--island-margin", type=float, default=0.02, help="Smart UV Project island_margin (default: 0.02)")
+    parser.add_argument("--cage-extrusion", type=float, default=0.1, help="Bake cage_extrusion in scene units (default: 0.1)")
+    parser.add_argument("--max-ray-distance", type=float, default=1.0, help="Bake max_ray_distance in scene units (default: 1.0)")
     return parser.parse_args(argv)
 
 
@@ -91,7 +95,7 @@ def main():
     bpy.context.view_layer.objects.active = new_obj
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
-    bpy.ops.uv.smart_project(angle_limit=66.0, island_margin=0.02)
+    bpy.ops.uv.smart_project(angle_limit=args.angle_limit, island_margin=args.island_margin)
     bpy.ops.object.mode_set(mode="OBJECT")
 
     log(f"creating {args.resolution}x{args.resolution} bake target image + material...")
@@ -114,8 +118,8 @@ def main():
     bpy.context.scene.render.bake.use_pass_indirect = False
     bpy.context.scene.render.bake.use_pass_color = True
     bpy.context.scene.render.bake.use_selected_to_active = True
-    bpy.context.scene.render.bake.cage_extrusion = 0.1
-    bpy.context.scene.render.bake.max_ray_distance = 1.0
+    bpy.context.scene.render.bake.cage_extrusion = args.cage_extrusion
+    bpy.context.scene.render.bake.max_ray_distance = args.max_ray_distance
 
     bpy.ops.object.select_all(action="DESELECT")
     old_obj.select_set(True)
