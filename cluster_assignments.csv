@@ -1,0 +1,7 @@
+garment_id,label,kmeans_k2,agglomerative_k2,kmeans_k3,agglomerative_k3,kmeans_k4,agglomerative_k4,kmeans_k5,agglomerative_k5
+testdress0,Test Dress 0,1,1,1,0,1,1,1,0
+testdress1,Test Dress 1,0,0,2,2,2,2,2,2
+testdress2,Test Dress 2,1,1,1,0,1,1,1,0
+testdress3,Test Dress 3,0,0,0,1,0,0,0,4
+testdress4,Test Dress 4,1,1,1,0,3,3,3,3
+dr-2023-17,DR.2023.17,0,0,0,1,0,0,4,1

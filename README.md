@@ -333,3 +333,39 @@ dropped rather than imputed, to avoid fabricating signal. `num_vertices` /
 `num_faces` are excluded because every mesh is decimated to ~15k vertices, so
 they're near-constant by construction and carry no shape signal.
 Requires `pandas`, `scikit-learn`, and `matplotlib` (in `requirements.txt`).
+
+### `clustering_analysis.py`
+
+Pilot Plan phase 5. Run once `pca_sanity_check.py` looks clean; doesn't need
+catalog metadata to be useful today:
+
+```bash
+python clustering_analysis.py --features features.csv
+```
+
+Runs k-means and hierarchical (Ward) clustering across a small range of k
+(default 2..min(6, n-1)) on the same z-scored feature set as
+`pca_sanity_check.py`, reports silhouette scores (an internal metric, no
+ground truth needed), writes every k's cluster assignments to
+`cluster_assignments.csv`, and saves a dendrogram
+(`cluster_dendrogram.png`). Refuses to run below n=4.
+
+**ARI/NMI validation against real catalog metadata** (curator-assigned
+`silhouette`/`torso`/etc. from CollectiveAccess) activates once that data
+exists — pass a CSV with a `garment_id` column matching `features.csv` plus
+your label column:
+
+```bash
+python clustering_analysis.py --features features.csv \
+    --metadata catalog_metadata.csv --metadata-column silhouette
+```
+
+Refuses to run the validation if any garment in `features.csv` is missing a
+metadata value (a partial ground-truth set would silently bias ARI/NMI),
+rather than silently dropping rows. Built and tested at n=6 (both the
+unsupervised path and the ARI/NMI path, the latter against synthetic
+placeholder labels used only to exercise the code — not a real result)
+specifically so it's ready and debugged before the 15-20 garment Phase 4/5
+target, per the project vault's recommendation not to leave this until
+under time pressure. Requires `scipy`, `scikit-learn`, `matplotlib` (already
+in `requirements.txt`).
