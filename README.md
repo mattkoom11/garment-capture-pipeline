@@ -36,6 +36,10 @@ RealityScan export (dense OBJ + diffuse texture)
                     features.csv
                        ↓
                     pca_sanity_check.py <- PCA smoke test
+                       ↓
+                    export_portfolio.py <- PCA + k-means as JSON for the
+                                           portfolio site's demo (run from
+                                           the portfolio: npm run sync:garments)
 ```
 
 Retired for the display and statistics paths (kept as history and in case
