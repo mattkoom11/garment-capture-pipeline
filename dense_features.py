@@ -66,6 +66,10 @@ def main():
     p.add_argument("--target-vertices", type=int, default=15000)
     p.add_argument("--faces", type=int, default=100000, help="Intermediate dense decimation target (faces)")
     p.add_argument("--allow-open", action="store_true", help="Continue even if the mesh is fragmented or has boundary edges")
+    p.add_argument("--capture-method", default="photogrammetry", choices=["photogrammetry", "hybrid"],
+                   help="'hybrid' if a supplementary LiDAR scan was merged into this OBJ via RealityScan "
+                        "(see the project vault's hybrid-lidar-capture page) -- flows into features.csv so "
+                        "PCA/clustering can be checked for a capture-method confound later.")
     a = p.parse_args()
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -82,7 +86,7 @@ def main():
                      "or use --allow-open to override.")
         m.export(merged)
         run_blender("decimate_mesh.py", "--input-obj", merged, "--output-obj", final, "--target-vertices", str(a.target_vertices))
-        row = ef.compute_features(ef.load_mesh(final), a.garment_id, a.label)
+        row = ef.compute_features(ef.load_mesh(final), a.garment_id, a.label, a.capture_method)
         ef.upsert_row(a.out, row)
     print(f"wrote row for '{a.garment_id}' to {a.out}")
 

@@ -78,6 +78,14 @@ def main():
     n = len(df)
     print(f"loaded {n} rows from {args.features}, {len(feature_columns)} features: {feature_columns}")
 
+    if "capture_method" in df.columns:
+        counts = df["capture_method"].value_counts().to_dict()
+        print(f"  capture method breakdown: {counts}")
+        if len(counts) > 1:
+            print("  NOTE: mixed capture methods present -- check whether cluster assignments split along "
+                  "capture_method before trusting them as a real shape grouping (hybrid LiDAR-merged garments "
+                  "may read systematically smoother than pure photogrammetry ones).")
+
     if n < 4:
         sys.exit(f"ERROR: only {n} garments -- clustering needs at least 4 for even k=2 vs. k=3 to be "
                   "distinguishable. Come back once more garments are scanned.")

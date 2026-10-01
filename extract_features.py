@@ -84,6 +84,7 @@ COLUMNS = [
     "surface_area", "volume", "is_watertight",
     "mean_curvature", "std_curvature",
     "symmetry_score", "drape_extent",
+    "capture_method",
 ]
 
 
@@ -155,7 +156,7 @@ def compute_drape_extent(mesh, lower_fraction=0.25):
     return float(radial.std() / mean_r)
 
 
-def compute_features(mesh, garment_id, label):
+def compute_features(mesh, garment_id, label, capture_method="photogrammetry"):
     mesh = normalize_up_axis(mesh, garment_id)
     bbox = mesh.extents  # [x, y, z] extents, now Y-up-consistent
     watertight = bool(mesh.is_watertight)
@@ -190,6 +191,7 @@ def compute_features(mesh, garment_id, label):
         "std_curvature": std_curv,
         "symmetry_score": compute_symmetry_score(mesh),
         "drape_extent": compute_drape_extent(mesh),
+        "capture_method": capture_method,
     }
 
 
@@ -198,6 +200,10 @@ def upsert_row(csv_path, row):
     if os.path.exists(csv_path):
         with open(csv_path, "r", newline="") as f:
             rows = list(csv.DictReader(f))
+    for r in rows:
+        # backfill rows written before capture_method existed -- every garment
+        # captured before 2026-10-01 was pure photogrammetry, not a guess
+        r.setdefault("capture_method", "photogrammetry")
     rows = [r for r in rows if r["garment_id"] != row["garment_id"]]
     rows.append({k: row[k] for k in COLUMNS})
     with open(csv_path, "w", newline="") as f:
@@ -212,13 +218,17 @@ def main():
     parser.add_argument("--garment-id", required=True, help="Unique garment identifier (used as the CSV row key)")
     parser.add_argument("--label", default="", help="Human-readable label for this garment")
     parser.add_argument("--out", required=True, help="Path to features.csv (created if missing, row updated if garment-id already present)")
+    parser.add_argument("--capture-method", default="photogrammetry", choices=["photogrammetry", "hybrid"],
+                        help="'hybrid' if a supplementary LiDAR scan was merged into this mesh via RealityScan "
+                             "(see the project vault's hybrid-lidar-capture page) -- flows into features.csv so "
+                             "PCA/clustering can be checked for a capture-method confound later.")
     args = parser.parse_args()
 
     print(f"loading {args.mesh}...")
     mesh = load_mesh(args.mesh)
     print(f"  {len(mesh.vertices)} verts, {len(mesh.faces)} faces, watertight={mesh.is_watertight}")
 
-    row = compute_features(mesh, args.garment_id, args.label)
+    row = compute_features(mesh, args.garment_id, args.label, args.capture_method)
     upsert_row(args.out, row)
     print(f"wrote row for '{args.garment_id}' to {args.out}")
 

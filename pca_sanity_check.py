@@ -54,9 +54,18 @@ def main():
     if "volume" in df.columns and not df["volume"].isna().any():
         feature_columns.append("volume")
 
-    dropped = [c for c in df.columns if c not in feature_columns and c not in ("garment_id", "label")]
+    dropped = [c for c in df.columns if c not in feature_columns and c not in ("garment_id", "label", "capture_method")]
     if dropped:
         print(f"  dropping (NaN or uninformative, not used): {dropped}")
+
+    if "capture_method" in df.columns:
+        counts = df["capture_method"].value_counts().to_dict()
+        print(f"  capture method breakdown: {counts}")
+        if len(counts) > 1:
+            print("  NOTE: mixed capture methods present -- a hybrid photogrammetry+LiDAR scan may read "
+                  "systematically smoother (lower curvature) than pure photogrammetry due to LiDAR's coarser "
+                  "native resolution. If PC1/PC2 scores split cleanly along capture_method, treat that as a "
+                  "capture-method artifact, not a real shape finding, until checked.")
 
     X = df[feature_columns].to_numpy()
     if np.isnan(X).any():

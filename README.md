@@ -287,6 +287,12 @@ scan (see `dense_features.py` below). See the project vault
 (`concepts/garment-capture/garment-feature-extraction.md`) for the full
 gotcha writeup.
 
+`--capture-method {photogrammetry,hybrid}` (default `photogrammetry`) tags
+the row so PCA/clustering can check for a capture-method confound once
+some garments are hybrid photogrammetry+LiDAR scans and some aren't — see
+`concepts/garment-capture/hybrid-lidar-capture.md`. Rows written before this
+flag existed are backfilled to `photogrammetry` automatically.
+
 ### `dense_features.py`
 
 **How `features.csv` is now built (since 2026-09-23).** Builds a row straight
@@ -316,6 +322,10 @@ more stable than 25k-50k on symmetry and drape, so 15k stays the target.
 `features_retopo_v1.csv` / `pca_sanity_check_retopo_v1.png` preserve the
 previous retopology-based results.
 
+Also takes `--capture-method` (same as `extract_features.py` above) — pass
+`--capture-method hybrid` for any garment whose OBJ includes a merged
+LiDAR scan (see `concepts/garment-capture/hybrid-lidar-capture.md`).
+
 ### `pca_sanity_check.py`
 
 Run once `features.csv` has a few rows, as a pipeline smoke test (not a
@@ -331,7 +341,12 @@ Z-score standardizes eight columns (`bbox_x/y/z`, `surface_area`,
 component loadings and saving a labeled scatter plot. Any column with NaNs is
 dropped rather than imputed, to avoid fabricating signal. `num_vertices` /
 `num_faces` are excluded because every mesh is decimated to ~15k vertices, so
-they're near-constant by construction and carry no shape signal.
+they're near-constant by construction and carry no shape signal. If
+`features.csv` has a `capture_method` column, prints a breakdown and warns
+if it's mixed (photogrammetry + hybrid) — a hybrid garment's LiDAR-derived
+geometry may read systematically smoother than photogrammetry, which could
+masquerade as a real PCA split; see
+`concepts/garment-capture/hybrid-lidar-capture.md`.
 Requires `pandas`, `scikit-learn`, and `matplotlib` (in `requirements.txt`).
 
 ### `clustering_analysis.py`
@@ -348,7 +363,9 @@ Runs k-means and hierarchical (Ward) clustering across a small range of k
 `pca_sanity_check.py`, reports silhouette scores (an internal metric, no
 ground truth needed), writes every k's cluster assignments to
 `cluster_assignments.csv`, and saves a dendrogram
-(`cluster_dendrogram.png`). Refuses to run below n=4.
+(`cluster_dendrogram.png`). Refuses to run below n=4. Same
+`capture_method` breakdown/warning as `pca_sanity_check.py` above — check
+it before trusting a cluster split once hybrid-captured garments exist.
 
 **ARI/NMI validation against real catalog metadata** (curator-assigned
 `silhouette`/`torso`/etc. from CollectiveAccess) activates once that data
