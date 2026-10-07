@@ -32,6 +32,7 @@ RealityScan export (dense OBJ + diffuse texture)
                        ↓                   (dense_features.py refuses those)
                     dense_features.py   <- decimate -> merge -> connectivity
                        ↓                   check -> 15k vertices ->
+                       ↓                   split non-manifold edges ->
                        ↓                   extract_features.py
                     features.csv
                        ↓
@@ -322,6 +323,19 @@ vertices, `testdress1` 0.25 -> 0.22), but within 13k-17k vertices it varies
 only ~4% per garment vs a between-garment spread ~20x larger (signal-to-noise
 22-113 for every feature; `volume` is essentially exact). The 13k-17k band was
 more stable than 25k-50k on symmetry and drape, so 15k stays the target.
+
+**Non-manifold edges (added 2026-10-07).** After the 15k decimation, any edge
+shared by more than 2 faces is repaired before features are computed. This
+happens where two fabric layers touch: `ENS.2023.14` had one such edge, which
+made trimesh report the mesh as not watertight, set `volume` to NaN, and
+dropped `volume` from PCA for every garment. One endpoint of the edge is split
+into one vertex per sheet, and each copy is nudged 1e-5 x the bbox diagonal so
+trimesh's default vertex merge doesn't fuse them back. Only one endpoint is
+split: ENS.2023.14's pinch is a crossing, where the faces pair up into sheets
+differently at each end, so splitting both endpoints leaves 4 one-sided edges.
+On ENS.2023.14 this added 1 vertex. `surface_area`, curvature, symmetry and
+drape moved by under 0.3%, and `volume` became 650.5. The step does nothing
+on a mesh that is already watertight, which covers the other 7 rows.
 
 `features_retopo_v1.csv` / `pca_sanity_check_retopo_v1.png` preserve the
 previous retopology-based results.

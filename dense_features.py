@@ -10,7 +10,17 @@ experiments/dense_vs_retopo/ for the comparison.
 
 Pipeline: decimate_dense_textured.py (5M -> 100k faces) -> merge vertices by
 position (drops UV-seam splits so curvature sees a connected surface) ->
-connectivity check -> decimate_mesh.py to --target-vertices -> extract_features.
+connectivity check -> decimate_mesh.py to --target-vertices -> split
+non-manifold edges -> extract_features.
+
+Non-manifold edges: where two fabric layers touch, a scan can end up with an
+edge shared by 4 faces instead of 2 (first seen on ENS.2023.14, 2026-10-07:
+one such edge, every other edge clean). trimesh then reports the mesh as not
+watertight and volume goes NaN, which drops volume from PCA for every
+garment. One endpoint of each such edge is split into one vertex per sheet
+(fan of faces connected through manifold edges), and each copy is nudged
+1e-5 x the bbox diagonal toward its own sheet so trimesh's default vertex
+merge doesn't fuse them back.
 
 Density is held fixed on purpose: curvature drifts systematically with mesh
 density (in a different direction per garment), but within 13k-17k vertices
@@ -57,6 +67,51 @@ def connectivity(mesh):
     return int((sizes > 0).sum()), int((counts == 1).sum())
 
 
+def split_nonmanifold_edges(mesh, max_splits=100):
+    """Return (mesh, n_vertices_split). See module docstring.
+
+    Splits one endpoint of a non-manifold edge at a time, then rechecks. One
+    endpoint is enough: its fans each take one copy of the edge. Splitting both
+    endpoints fails on a crossing pinch, where the faces pair up into sheets one
+    way around one endpoint and the other way around the other (ENS.2023.14)."""
+    verts, faces = mesh.vertices.copy(), mesh.faces.copy()
+    nudge = 1e-5 * float(np.linalg.norm(mesh.extents))
+    for n_split in range(max_splits + 1):
+        edges = np.sort(np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]]), axis=1)
+        uniq, counts = np.unique(edges, axis=0, return_counts=True)
+        bad = uniq[counts > 2]
+        if len(bad) == 0 or n_split == max_splits:
+            break
+        manifold = {tuple(e) for e in uniq[counts == 2]}
+        v = bad[0][0]
+        incident = np.where((faces == v).any(axis=1))[0]
+        # faces around v are in the same sheet if they share a manifold edge through v
+        parent = {f: f for f in incident}
+        def find(f):
+            while parent[f] != f:
+                parent[f] = parent[parent[f]]
+                f = parent[f]
+            return f
+        by_edge = {}
+        for f in incident:
+            for w in faces[f]:
+                if w != v:
+                    by_edge.setdefault(tuple(sorted((v, w))), []).append(f)
+        for e, fs in by_edge.items():
+            if e in manifold and len(fs) == 2:
+                parent[find(fs[0])] = find(fs[1])
+        fans = {}
+        for f in incident:
+            fans.setdefault(find(f), []).append(f)
+        for fan in list(fans.values())[1:]:
+            centre = verts[faces[fan].ravel()].mean(axis=0)
+            d = centre - verts[v]
+            verts = np.vstack([verts, verts[v] + nudge * d / (np.linalg.norm(d) or 1.0)])
+            for f in fan:
+                faces[f][faces[f] == v] = len(verts) - 1
+    return trimesh.Trimesh(vertices=verts, faces=faces, process=False), n_split
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--obj", required=True, help="Dense RealityScan OBJ (welded if the raw scan is fragmented)")
@@ -86,7 +141,10 @@ def main():
                      "or use --allow-open to override.")
         m.export(merged)
         run_blender("decimate_mesh.py", "--input-obj", merged, "--output-obj", final, "--target-vertices", str(a.target_vertices))
-        row = ef.compute_features(ef.load_mesh(final), a.garment_id, a.label, a.capture_method)
+        mesh, n_split = split_nonmanifold_edges(ef.load_mesh(final))
+        if n_split:
+            print(f"  split {n_split} vertex/vertices at non-manifold edges -> watertight={mesh.is_watertight}")
+        row = ef.compute_features(mesh, a.garment_id, a.label, a.capture_method)
         ef.upsert_row(a.out, row)
     print(f"wrote row for '{a.garment_id}' to {a.out}")
 
