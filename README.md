@@ -404,3 +404,84 @@ specifically so it's ready and debugged before the 15-20 garment Phase 4/5
 target, per the project vault's recommendation not to leave this until
 under time pressure. Requires `scipy`, `scikit-learn`, `matplotlib` (already
 in `requirements.txt`).
+
+**First real (non-synthetic) ARI/NMI run (2026-10-25):** `catalog_metadata.csv`
+holds real `era` values (`pre-1920` / `1920-1950` / `1950-1980`) for the 12
+garments that now have a known accession number in the collection
+spreadsheet; `testdress0` still has none and is excluded. Since the script
+refuses to run with a partial ground-truth set, this validation runs against
+a filtered `features.csv` (no `testdress0`), saved separately as
+`cluster_assignments_era_validated.csv` / `cluster_dendrogram_era_validated.png`
+rather than overwriting the n=13 unsupervised baseline:
+
+```bash
+python -c "import pandas as pd; df = pd.read_csv('features.csv'); df[df.garment_id != 'testdress0'].to_csv('/tmp/features_era_subset.csv', index=False)"
+python clustering_analysis.py --features /tmp/features_era_subset.csv \
+    --metadata catalog_metadata.csv --metadata-column era \
+    --out-clusters cluster_assignments_era_validated.csv \
+    --out-dendrogram cluster_dendrogram_era_validated.png
+```
+
+Result: ARI near zero (-0.07 to 0.03) and low NMI (0.08-0.33) across k=2..6 —
+no real correspondence between the shape-based clusters and era. Read this as
+the ARI/NMI mechanics now proven correct on real labels, not as evidence the
+geometry fails to predict era: at n=12 the era split is heavily imbalanced
+(9 pre-1920 / 1 1920-1950 / 2 1950-1980), which caps how much any clustering
+could score regardless of real-world correlation. Revisit once Phase 4's
+15-20 garments are reached and the era distribution is less skewed; `era` is
+also a coarse proxy for `silhouette`/`torso` and likely has a weaker geometry
+relationship than those finer curator fields would.
+
+**Silhouette validation (2026-10-25):** `catalog_metadata.csv` also has a
+`silhouette` column, a 4-bucket taxonomy (`full-skirted` / `moderately-flared`
+/ `straight-fitted` / `structural`) hand-derived from the same 12 curatorial
+descriptions and confirmed with Matthew before encoding (silhouette grouping
+is a curatorial judgment call, not something to infer silently). Run the
+same way as the `era` validation above, substituting
+`--metadata-column silhouette` and
+`cluster_assignments_silhouette_validated.csv` /
+`cluster_dendrogram_silhouette_validated.png`. Result: ARI still near zero
+(-0.07 to 0.02), NMI modestly higher than `era`'s (0.18-0.44 vs. 0.08-0.33)
+but still weak.
+
+**Why ARI stays near zero for both labels — a real, diagnosed cause, not
+just small-n noise:** `pca_sanity_check.py`'s component loadings show PC1
+(66.6% of variance) loads almost uniformly (~0.36-0.40) across `bbox_x`,
+`bbox_y`, `bbox_z`, `surface_area`, `std_curvature`, and `volume` — a single
+"how big is this garment" factor. The features that should actually carry
+silhouette information, `drape_extent` (0.717) and `symmetry_score` (0.420),
+only dominate PC2, which explains just 16.1% of variance. Since clustering
+runs on z-scored Euclidean distance across all features equally, overall
+scale currently swamps shape by roughly 4:1. Likely fix, not yet tried:
+replace the absolute `bbox_x/y/z`/`surface_area`/`volume` columns with
+size-normalized ratios (e.g. `bbox_x / bbox_y`, `bbox_z / bbox_y`,
+`surface_area / bbox_y**2`) so garment height stops dominating the distance
+metric, and genuine proportion/shape differences can actually separate
+clusters.
+
+**Size normalization implemented and tested (2026-10-25):** both
+`pca_sanity_check.py` and `clustering_analysis.py` now z-score
+`bbox_aspect_xy`/`bbox_aspect_zy`/`surface_area_norm`/`volume_norm`
+(garment-height-normalized ratios computed from the raw `features.csv`
+columns, see `add_normalized_size_features` in either script) instead of
+the raw `bbox_x/y/z`/`surface_area`/`volume`. The PCA diagnosis confirms
+the fix did what it was supposed to: PC1 dropped from 66.6% to 44.2% of
+variance, and drape_extent/symmetry_score's loadings strengthened
+considerably in PC2 (now -0.460/-0.415, with PC2's share of variance up
+from 16.1% to 30.4%) — absolute size no longer swamps shape the way it did.
+
+**But re-running the era and silhouette ARI/NMI validation with the
+normalized features did not meaningfully improve label recovery.** ARI is
+still ~0 for both (era: -0.07 to 0.03; silhouette: -0.18 to 0.01). NMI
+improved somewhat for era (0.20-0.37, vs. 0.08-0.33 before) but was mixed
+for silhouette (0.18-0.43, a wider spread, not a clean gain). Read this as
+a real, honest negative result, not a failed experiment: the normalization
+was a correct fix for a real, diagnosed problem (confirmed via the PCA
+loadings), and it's worth keeping regardless, but it wasn't the whole
+story — at n=12, with 3-4 imbalanced ground-truth classes, ARI/NMI may
+simply need more garments before any real relationship between shape and
+curator-assigned categories (if one exists) becomes detectable above noise.
+This doesn't rule out that the remaining features (mean_curvature,
+std_curvature, symmetry_score, drape_extent) just don't capture silhouette
+as directly as hoped, either — that's a separate open question from the
+scale-confound one, which is now resolved.

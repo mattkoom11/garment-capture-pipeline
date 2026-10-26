@@ -1,0 +1,13 @@
+garment_id,label,kmeans_k2,agglomerative_k2,kmeans_k3,agglomerative_k3,kmeans_k4,agglomerative_k4,kmeans_k5,agglomerative_k5,kmeans_k6,agglomerative_k6
+testdress1,Test Dress 1,1,0,1,0,2,1,1,1,0,0
+testdress2,Test Dress 2,0,1,0,1,1,0,4,2,1,2
+testdress3,Test Dress 3,1,0,2,2,3,2,3,0,2,1
+testdress4,Test Dress 4,1,0,1,0,0,3,2,3,5,3
+dr-2023-17,DR.2023.17,1,0,2,2,3,2,3,0,2,1
+dr-2023-323,DR.2023.323,0,1,0,1,1,0,0,4,4,4
+ens-2023-14,ENS.2023.14,0,1,0,1,1,0,0,4,4,4
+dr-2026-118,DR.2026.118,1,0,2,2,3,2,3,0,3,5
+dr-2025-432,DR.2025.432,0,1,0,1,1,0,0,4,4,4
+dr-2025-433,DR.2025.433,1,0,1,0,2,1,1,1,0,0
+ens-2026-124,ENS.2026.124,0,1,0,1,1,0,0,2,1,2
+dr-2025-443,DR.2025.443,0,1,0,1,1,0,4,2,1,2

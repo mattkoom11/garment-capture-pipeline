@@ -15,8 +15,14 @@ moment a --metadata CSV is supplied.
 
 Same feature set and NaN-handling as pca_sanity_check.py (kept in sync
 deliberately -- both scripts should agree on what "the features" are):
-bbox_x/y/z, surface_area, mean_curvature, std_curvature, symmetry_score,
-drape_extent, plus volume when it has no NaNs.
+bbox_aspect_xy, bbox_aspect_zy, surface_area_norm, mean_curvature,
+std_curvature, symmetry_score, drape_extent, plus volume_norm when it has
+no NaNs. The size columns are garment-height-normalized ratios, not the
+raw bbox_x/y/z/surface_area/volume columns in features.csv -- see
+pca_sanity_check.py's "Size normalization" docstring note and the README's
+"Silhouette validation" section (2026-10-25) for why: raw absolute size
+was dominating PCA/clustering (PC1, 66.6% of variance) over the features
+that actually carry silhouette shape.
 
 Usage (unsupervised only, today):
     python clustering_analysis.py --features features.csv
@@ -41,17 +47,30 @@ from sklearn.metrics import (
 from sklearn.preprocessing import StandardScaler
 
 FEATURE_COLUMNS = [
-    "bbox_x", "bbox_y", "bbox_z",
-    "surface_area", "mean_curvature", "std_curvature",
+    "bbox_aspect_xy", "bbox_aspect_zy",
+    "surface_area_norm", "mean_curvature", "std_curvature",
     "symmetry_score", "drape_extent",
 ]
 
 
+def add_normalized_size_features(df):
+    """Replace absolute-scale columns with garment-height-normalized ratios --
+    kept in sync with pca_sanity_check.py's copy of this function."""
+    df = df.copy()
+    df["bbox_aspect_xy"] = df["bbox_x"] / df["bbox_y"]
+    df["bbox_aspect_zy"] = df["bbox_z"] / df["bbox_y"]
+    df["surface_area_norm"] = df["surface_area"] / df["bbox_y"] ** 2
+    if "volume" in df.columns:
+        df["volume_norm"] = df["volume"] / df["bbox_y"] ** 3
+    return df
+
+
 def load_features(path):
     df = pd.read_csv(path)
+    df = add_normalized_size_features(df)
     feature_columns = list(FEATURE_COLUMNS)
-    if "volume" in df.columns and not df["volume"].isna().any():
-        feature_columns.append("volume")
+    if "volume_norm" in df.columns and not df["volume_norm"].isna().any():
+        feature_columns.append("volume_norm")
 
     X = df[feature_columns].to_numpy()
     if np.isnan(X).any():
@@ -126,10 +145,11 @@ def main():
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(max(8, n * 0.8), 5))
     dendrogram(Z, labels=df["garment_id"].tolist(), ax=ax)
     ax.set_title(f"Hierarchical clustering dendrogram (n={n} -- pipeline smoke test, not a validated result)")
     ax.set_ylabel("Ward distance")
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", fontsize=8)
     fig.tight_layout()
     fig.savefig(args.out_dendrogram, dpi=150)
     print(f"saved dendrogram to {args.out_dendrogram}")

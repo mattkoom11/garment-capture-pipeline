@@ -10,14 +10,27 @@ pipeline/schema bugs in features.csv early (does PCA run cleanly, do the
 z-scored features look sane), not to draw a real conclusion about these
 three garments.
 
-Eight columns are used: bbox_x/y/z, surface_area, mean_curvature,
-std_curvature, symmetry_score, and drape_extent (the latter two implemented
-2026-09-08 -- see extract_features.py's docstring for their definitions).
-`volume` is added as a ninth column only when it has no NaNs (it was all-NaN
-for every row while features came from AutoRemesher's non-manifold retopology;
-meshes decimated from the dense scan are watertight so it is defined). If any
-row is NaN it is dropped rather than imputed -- imputing a placeholder value
-would silently fabricate signal in a PCA.
+Seven columns are used: bbox_aspect_xy, bbox_aspect_zy, surface_area_norm,
+mean_curvature, std_curvature, symmetry_score, and drape_extent.
+`volume_norm` is added as an eighth column only when `volume` has no NaNs
+(it was all-NaN for every row while features came from AutoRemesher's
+non-manifold retopology; meshes decimated from the dense scan are
+watertight so it is defined). If any row is NaN it is dropped rather than
+imputed -- imputing a placeholder value would silently fabricate signal in
+a PCA.
+
+Size normalization (2026-10-25): bbox_x/y/z, surface_area, and volume are
+raw columns in features.csv, but z-scoring them directly for PCA/clustering
+makes "how big is this garment" the dominant signal -- confirmed on the
+real 12-garment set, where PC1 (66.6% of variance) loaded almost uniformly
+(~0.36-0.40) across those five columns, while drape_extent/symmetry_score
+(the features that should actually carry silhouette) only showed up in PC2
+at 16.1%. `add_normalized_size_features` below replaces them with
+garment-height-normalized ratios (bbox_aspect_xy = bbox_x/bbox_y,
+bbox_aspect_zy = bbox_z/bbox_y, surface_area_norm = surface_area/bbox_y**2,
+volume_norm = volume/bbox_y**3) so a tall garment and a short garment with
+the same proportions land at the same point in feature space. See the
+README's "Silhouette validation" section for the full writeup.
 num_vertices/num_faces are also excluded, for a different reason as of
 2026-09-08: now that every mesh is decimated to ~15,000 vertices before
 extraction (decimate_mesh.py), these columns are nearly constant across
@@ -35,10 +48,23 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 FEATURE_COLUMNS = [
-    "bbox_x", "bbox_y", "bbox_z",
-    "surface_area", "mean_curvature", "std_curvature",
+    "bbox_aspect_xy", "bbox_aspect_zy",
+    "surface_area_norm", "mean_curvature", "std_curvature",
     "symmetry_score", "drape_extent",
 ]
+RAW_SIZE_COLUMNS = ["bbox_x", "bbox_y", "bbox_z", "surface_area", "volume"]
+
+
+def add_normalized_size_features(df):
+    """Replace absolute-scale columns with garment-height-normalized ratios --
+    see module docstring's "Size normalization" note for why."""
+    df = df.copy()
+    df["bbox_aspect_xy"] = df["bbox_x"] / df["bbox_y"]
+    df["bbox_aspect_zy"] = df["bbox_z"] / df["bbox_y"]
+    df["surface_area_norm"] = df["surface_area"] / df["bbox_y"] ** 2
+    if "volume" in df.columns:
+        df["volume_norm"] = df["volume"] / df["bbox_y"] ** 3
+    return df
 
 
 def main():
@@ -49,12 +75,13 @@ def main():
 
     df = pd.read_csv(args.features)
     print(f"loaded {len(df)} rows from {args.features}")
+    df = add_normalized_size_features(df)
 
     feature_columns = list(FEATURE_COLUMNS)
-    if "volume" in df.columns and not df["volume"].isna().any():
-        feature_columns.append("volume")
+    if "volume_norm" in df.columns and not df["volume_norm"].isna().any():
+        feature_columns.append("volume_norm")
 
-    dropped = [c for c in df.columns if c not in feature_columns and c not in ("garment_id", "label", "capture_method")]
+    dropped = [c for c in df.columns if c not in feature_columns and c not in ("garment_id", "label", "capture_method", *RAW_SIZE_COLUMNS)]
     if dropped:
         print(f"  dropping (NaN or uninformative, not used): {dropped}")
 
