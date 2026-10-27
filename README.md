@@ -186,6 +186,17 @@ python dense_to_glb.py \
   --rotate-x -90          # 0 for a Y-up export, -90 for a Z-up one
 ```
 
+**Two files per garment (2026-10-27).** The default 100k faces is the
+frontend's `web_preview` (the runway loads every garment at once). Each
+garment also gets a `full_detail` file for the record page, built from the
+same scan with `--faces 500000 --reference-glb <the preview, uncompressed>`
+and saved as `<id>-detail.glb`. At 100k the decimation was the main loss of
+quality: pleats, weaves and ruffles turned faceted and smeared, while the
+4096 px texture cap and the dropped RealityScan normal map (nearly flat on
+these ~5M-face exports) cost almost nothing. 500k restores most of it at
+~3.5-5 MB after the frontend's `scripts/optimize-models.sh`; 1M was only
+slightly sharper at ~6.5 MB.
+
 Wraps the Blender Collapse decimate (5.0M -> 100k faces, ~75s) and the
 trimesh GLB assembly. Instead of `--rotate-x` you can pass
 `--reference-glb existing.glb` to auto-pick the axis-aligned rotation that
