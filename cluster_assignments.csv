@@ -1,9 +1,9 @@
 garment_id,label,kmeans_k2,agglomerative_k2,kmeans_k3,agglomerative_k3,kmeans_k4,agglomerative_k4,kmeans_k5,agglomerative_k5,kmeans_k6,agglomerative_k6
 testdress0,Test Dress 0,1,1,1,1,3,3,1,3,1,3
-testdress1,Test Dress 1,0,0,0,0,1,0,4,4,5,4
-testdress2,Test Dress 2,0,0,0,0,2,1,4,0,4,1
-testdress3,Test Dress 3,0,0,2,2,0,2,0,2,2,2
-testdress4,Test Dress 4,0,0,1,0,1,0,3,1,3,0
+testdress1,OTW.2023.780,0,0,0,0,1,0,4,4,5,4
+testdress2,ENS.2023.802,0,0,0,0,2,1,4,0,4,1
+testdress3,OTW.2025.243,0,0,2,2,0,2,0,2,2,2
+testdress4,BD.2026.125,0,0,1,0,1,0,3,1,3,0
 dr-2023-17,DR.2023.17,0,0,2,2,0,2,0,2,0,2
 dr-2023-323,DR.2023.323,0,0,0,0,2,1,2,0,0,5
 ens-2023-14,ENS.2023.14,0,0,0,0,2,1,2,0,0,5
@@ -13,4 +13,4 @@ dr-2025-433,DR.2025.433,0,0,0,0,1,0,3,1,3,0
 ens-2026-124,ENS.2026.124,0,0,0,0,2,1,2,0,4,1
 dr-2025-443,DR.2025.443,0,0,0,0,2,1,2,0,4,1
 ens-2025-566,ENS.2025.566,1,1,1,1,3,3,1,3,1,3
-scan-2026-10-26,Unnumbered scan 2026-10-26,1,0,1,0,1,0,3,1,3,0
+ens-2025-510,ENS.2025.510,1,0,1,0,1,0,3,1,3,0

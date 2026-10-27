@@ -26,6 +26,7 @@ Usage:
 import argparse
 import datetime
 import json
+import re
 import subprocess
 import sys
 
@@ -38,10 +39,13 @@ from clustering_analysis import load_features
 
 ANCHORS = ["surface_area_norm", "drape_extent"]
 K_MAX = 4
+ACCESSION = re.compile(r"[A-Z]+\.\d{4}\.\d+")
 
 
-def kind_of(garment_id):
-    return "test" if garment_id.startswith("testdress") else "archive"
+def kind_of(label):
+    # A garment counts as an archive piece once it has an accession number
+    # (e.g. OTW.2023.780) as its label; uncatalogued test dresses keep "Test Dress N".
+    return "archive" if ACCESSION.fullmatch(label) else "test"
 
 
 def source_commit():
@@ -94,7 +98,7 @@ def main():
             {
                 "id": gid,
                 "label": label,
-                "kind": kind_of(gid),
+                "kind": kind_of(label),
                 "pc": [round(float(a), 3), round(float(b), 3)],
                 "z": [round(float(v), 2) for v in z],
             }
