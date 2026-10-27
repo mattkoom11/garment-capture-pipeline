@@ -9,8 +9,8 @@ doesn't jump around between runs as garments are added:
 
   - Component direction. PCA can return a component or its mirror image.
     Each component is flipped, if needed, so its ANCHORS feature loads
-    positively (PC1: bigger surface area is to the right; PC2: more hem
-    drape is up).
+    positively (PC1: more surface area for the garment's height is to the
+    right; PC2: more hem drape is up).
   - Cluster numbering. k-means numbers clusters arbitrarily; here cluster 0
     is the one with the highest mean PC1 score (the largest garments), then
     downward, so colours stay put when the grouping itself doesn't change.
@@ -36,7 +36,7 @@ from sklearn.metrics import silhouette_score
 
 from clustering_analysis import load_features
 
-ANCHORS = ["surface_area", "drape_extent"]
+ANCHORS = ["surface_area_norm", "drape_extent"]
 K_MAX = 4
 
 
