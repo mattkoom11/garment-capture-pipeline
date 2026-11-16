@@ -24,6 +24,10 @@ Current flow (since 2026-09-23). Both branches start from the dense RealityScan
 OBJ + its texture; AutoRemesher retopology is no longer used by either.
 
 ```
+photos (ARW + JPG)
+   ↓
+realityscan/   <- align unmasked -> control points for split components
+   ↓              -> AI masks -> mask QA -> (region, mesh, texture in the GUI)
 RealityScan export (dense OBJ + diffuse texture)
    |
    +-- display:     dense_to_glb.py  ->  GLB for the frontend
@@ -48,6 +52,74 @@ they're needed again): AutoRemesher retopology, `bake_texture.py`,
 `assemble_textured_glb.py`, and `decimate_mesh.py` as a standalone step
 (`dense_features.py` still calls it internally). Previous retopology-based
 results are in `features_retopo_v1.csv`.
+
+## RealityScan stage (`realityscan/`, added 2026-11-16)
+
+Drives the CrossOver RealityScan install from the command line to get every
+photo into one aligned component and masked before meshing. Needs
+`opencv-python-headless` (in `requirements.txt`). **Close the RealityScan
+window first:** headless runs stall on a hidden dialog when another instance
+is open, and `rs_headless.py` refuses to start in that case. It writes to a
+copy (`--save-as X_cp.rsproj`), kills only its own headless instance (`-quit`
+doesn't exit under CrossOver) and deletes the autosave that leaves behind.
+
+```bash
+cd realityscan
+P=~/RealityScan_Projects/RB.2025.528; I=~/Downloads/RB.2025.528/101MSDCF; W=/tmp/rb
+
+# 1. align unmasked: background features (walls, racks, floor) help registration
+python rs_headless.py align $P/RB.2025.528.rsproj --save-as $P/RB.2025.528_cp.rsproj --export-dir $W/before
+python components.py $W/before $I                 # who is in which component, who is unaligned
+
+# 2. control points, only if step 1 left more than one big component or many unaligned frames
+python cp_match.py $I $W                          # SIFT + verified pairs (neighbors, orbit loops)
+python cp_match.py $I $W --targets 05064,05077    # leftover frames vs every frame
+python cp_select.py $W $W/before/membership.txt --main "Component 5" -o $W/cps.csv
+python cp_check.py $I $W/cps.csv $W/check.jpg     # LOOK at it; drop drifting points
+python rs_headless.py import-cps $P/RB.2025.528_cp.rsproj $W/cps.csv --export-dir $W/after
+python components.py $W/after $I
+
+# 3. masks, after alignment so they only shape the mesh
+python rs_headless.py ai-masks $P/RB.2025.528_cp.rsproj
+python mask_qa.py $P/RB.2025.528_cp.rsproj $I $W/masks.jpg       # look at every frame listed
+python rs_headless.py white-masks $P/RB.2025.528_cp.rsproj --frames 05190,05193
+```
+
+Then open the `_cp` project in the GUI, set the Reconstruction Region tight
+around the garment (it removes the stand, casters and the stray background
+garments the AI masks keep), mesh, texture and export as before.
+
+**Coordinates.** A control-point measurement is the raw sensor-orientation
+pixel plus the ARW crop origin: `x_rs = x_jpg + 12`, `y_rs = y_jpg + 12`, with
+the JPG read *without* applying EXIF rotation (OpenCV applies it by default;
+`cv2.IMREAD_IGNORE_ORIENTATION`). The ARW decodes to 6024x4024 and the JPG is
+that image cropped to 6000x4000 at (12, 12). This holds for frames with either
+EXIF orientation tag (RB.2025.528 mixes both). Masks are stored in the same
+sensor frame.
+
+**When control points help, and when they don't.** They join components of
+sharp images that RealityScan couldn't match across: DR.2024.121 (reflective
+sequins, mask-limited) went from a 64-camera largest component to 136/180,
+RB.2025.528 from 152 + a 5-camera piece to 162/170. They don't rescue
+motion-blurred frames: DR.2025.446's three blurred leftovers stayed unaligned
+with 3-4 checked points each. SIFT match density predicts the need: verified
+matches were 48k (DR.2024.121), 25k (RB) and 308k (DR.2025.446, aligned
+253/256 on its own).
+
+**Points to drop at the check.** Crosshairs that move to a different feature
+along the row; plain untextured fabric; repeating texture (net, mesh, weave),
+which can pass the epipolar test one cell off; specular highlights (a caster's
+shine moves with the viewpoint); anything that moved between shots (people,
+and the stand's casters on RB were borderline).
+
+**Mask QA.** RealityScan's AI masking is reliable on wide shots and fails on
+close-ups: with no silhouette in frame it keeps one lace or tassel patch and
+masks out the fabric around it (9 of RB's close-ups kept 0-20% of the frame).
+`mask_qa.py` lists coverage per frame and renders everything below 45%;
+low-angle shots where the masked area is floor are correct, close-ups that
+lost fabric get a full-frame mask via `white-masks`. That command points the
+mask layer at `_masks/white_WxH.png` next to the project folder instead of
+rewriting the AI mask, so keep that file in place.
 
 ## Scripts
 
@@ -355,6 +427,24 @@ Also takes `--capture-method` (same as `extract_features.py` above) — pass
 `--capture-method hybrid` for any garment whose OBJ includes a merged
 LiDAR scan (see `concepts/garment-capture/hybrid-lidar-capture.md`).
 
+### `render_thumbnail.py`
+
+Front-on collection-card thumbnail (600x800, transparent PNG) from a display
+GLB, in the record page's unlit "photo" look. Run per garment through the
+frontend's `scripts/render-thumbnails.sh`, which reads each garment's
+`model3d_rotationY` from `garments.json`, dequantizes the meshopt GLB first
+(Fedora's Blender lacks the meshopt decoder), converts to WebP and sets
+`thumbnailUrl`. Re-run it for a garment after its orientation changes.
+
+```bash
+blender --background --python render_thumbnail.py -- \
+    --glb dr-2026-118.glb --rotation-y 140 --out dr-2026-118.png
+```
+
+Colour checked on DR.2026.118 (2026-11-16): render median 208,165,95 vs.
+the embedded texture's 222,179,107. The OCIO version error Blender prints
+does not shift the colour.
+
 ### `crop_below.py`
 
 For a scan where RealityScan also reconstructed the floor or the stand's base
@@ -374,8 +464,8 @@ each open loop left by the cut capped by a centroid fan, so `dense_features.py`
 still sees a watertight mesh and `volume` stays defined. Choose the height
 from a width-by-height profile of the scan's vertices: the slab is the band
 whose width jumps far past the garment's. The proper fix is upstream (mask the
-images or tighten the Reconstruction Region before meshing); this is for
-exports that already have it.
+images or tighten the Reconstruction Region before meshing; see "RealityScan
+stage" above); this is for exports that already have it.
 
 ### `pca_sanity_check.py`
 

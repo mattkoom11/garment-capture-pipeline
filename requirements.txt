@@ -6,3 +6,4 @@ pillow
 pandas
 scikit-learn
 matplotlib
+opencv-python-headless
