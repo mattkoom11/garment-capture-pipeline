@@ -355,6 +355,28 @@ Also takes `--capture-method` (same as `extract_features.py` above) — pass
 `--capture-method hybrid` for any garment whose OBJ includes a merged
 LiDAR scan (see `concepts/garment-capture/hybrid-lidar-capture.md`).
 
+### `crop_below.py`
+
+For a scan where RealityScan also reconstructed the floor or the stand's base
+under the garment (first seen on `RB.2025.528`, 2026-11-16: a wide slab of
+~1M faces under the hem). Left in, the slab inflates `bbox_x/z`,
+`surface_area`, `volume` and especially `drape_extent` (0.669 vs. 0.339 after
+cropping), and it shows on the site.
+
+```bash
+python crop_below.py raw_scan.obj display.obj stats.obj 2.0
+```
+
+Drops every face with a vertex below the cut height (Z-up) and writes two
+OBJs: `display.obj` keeps RealityScan's UVs and material for `dense_to_glb.py`
+(copy the `.mtl` and diffuse next to it); `stats.obj` is geometry only, with
+each open loop left by the cut capped by a centroid fan, so `dense_features.py`
+still sees a watertight mesh and `volume` stays defined. Choose the height
+from a width-by-height profile of the scan's vertices: the slab is the band
+whose width jumps far past the garment's. The proper fix is upstream (mask the
+images or tighten the Reconstruction Region before meshing); this is for
+exports that already have it.
+
 ### `pca_sanity_check.py`
 
 Run once `features.csv` has a few rows, as a pipeline smoke test (not a
