@@ -44,9 +44,13 @@ def rs_pids(headless):
     return out
 
 
-def remove_autosave(project):
+def remove_autosave(project, since):
+    """Delete autosaves this run left behind; never touch older ones (a GUI session's recovery copy)."""
     project = Path(project)
     for p in project.parent.glob(project.stem + '*.autosave'):
+        if p.stat().st_mtime < since:
+            print(f'kept pre-existing autosave {p.name} (not created by this run)', file=sys.stderr)
+            continue
         shutil.rmtree(p) if p.is_dir() else p.unlink()
 
 
@@ -76,7 +80,7 @@ def run(project, commands, sentinel, timeout):
         for pid in rs_pids(headless=True):
             os.kill(pid, signal.SIGTERM)
         time.sleep(3)
-        remove_autosave(project)
+        remove_autosave(project, t0)
     print(f'{"done" if ok else "FAILED"} in {time.time() - t0:.0f}s')
     return ok
 
@@ -123,7 +127,7 @@ def main():
         for f in a.frames.split(','):
             cmds += ['-setImageLayer', str(names.index('DSC' + f.strip())), win(white), 'mask']
         cmds += ['-save', win(out)]
-        print(f'project now depends on {white} (do not move it)')
+        after = f'project now depends on {white} (do not move it)'
     elif a.job == 'components':
         names = re.findall(r'<component name="([^"]+)"', proj.read_text(errors='ignore'))
         for i, n in enumerate(names):
@@ -132,6 +136,8 @@ def main():
             ''.join(f'c{i:02d}|{n}\n' for i, n in enumerate(names)))
 
     ok = run(proj, cmds, sentinel, a.timeout)
+    if ok and a.job == 'white-masks':
+        print(after)
     sys.exit(0 if ok else 1)
 
 
