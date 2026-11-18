@@ -31,6 +31,8 @@ def main():
         rows[pn].append((im[3:8], float(x), float(y)))
     first = set(a.first.split(','))
     pts = a.points.split(',') if a.points else sorted(rows)
+    if not pts:
+        raise SystemExit(f'no control points in {a.csv}; nothing to check')
     cache, out, r = {}, [], a.radius
     for pn in pts:
         meas = sorted(rows[pn], key=lambda m: (m[0] not in first, m[0]))[:a.tiles]
